@@ -1,0 +1,42 @@
+service: billing
+
+provider:
+  name: aws
+  runtime: python3.6
+  role: billingRole
+
+resources:
+  Resources:
+    billingRole:
+      Type: AWS::IAM::Role
+      Properties:
+        Path: /
+        RoleName: billingRole
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: CostExplorerAccess
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - ce:GetCostAndUsage
+                  Resource: "*"
+  
+functions:
+  getcosts:
+    handler: billing.lambda_handler
+    memorySize: 128
+    timeout: 10
+    events:
+      - http:
+          path: costs
+          method: post
+          cors: true

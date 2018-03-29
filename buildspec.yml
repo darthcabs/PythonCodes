@@ -1,0 +1,21 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Pre build...
+      - pip install --upgrade pip
+      - pip3 install boto3 -t .
+      - npm install serverless -g
+  build:
+    commands:
+      - echo Build...
+      # - sls create --template aws-nodejs
+      - sls deploy --verbose
+  post_build:
+    commands:
+      - echo Post build...
+
+# artifacts:
+#   files:
+#     - src/lambda_bradesco_breakhash/lambda_bradesco_breakhash.zip

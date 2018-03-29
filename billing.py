@@ -1,57 +1,65 @@
-#!/usr/bin/env python3.6
+def lambda_handler(event, context):
+    from datetime import datetime
+    import boto3
 
-from datetime import date, timedelta
-from datetime import datetime
+    try:
+        end = str(datetime.strptime(event['enddate'], '%Y-%m-%d').date())
+        start = str(datetime.strptime(event['startdate'], '%Y-%m-%d').date())
+        tagKey = event['tagkey']
+        tagValue = event['tagvalue']
+    except IndexError:
+        return 'Required params: tagkey: str, tagvalue: str, startdate: str, enddate: str. Date format: yyyy-mm-dd'
 
-import sys
-import boto3
+    ce = boto3.client('ce')
 
-try:
-    end = str(datetime.strptime(sys.argv[4], '%Y-%m-%d').date())
-    start = str(datetime.strptime(sys.argv[3], '%Y-%m-%d').date())
-    tagKey = sys.argv[1]
-    tagValue = sys.argv[2]
-except IndexError:
-    print('Usage: billing.py <tag_key> <tag_value> <start_date> <end_date>')
-    print('Date format: yyyy-mm-dd')
-    sys.exit(0)
+    costs = ce.get_cost_and_usage(
+        TimePeriod={
+            'Start': start,
+            'End': end
+        },
+        Granularity='DAILY',
+        Filter={
+            'Tags': {
+                'Key': tagKey,
+                'Values': [
+                    tagValue
+                ]
+            }
+        },
+        Metrics=[
+            "UnblendedCost",
+            "UsageQuantity"
+        ],
+        GroupBy=[
+            {
+                'Type': 'DIMENSION',
+                'Key': 'SERVICE'
+            }
+        ]
+    )
 
-ce = boto3.client('ce')
+    result = list()
 
-costs = ce.get_cost_and_usage(
-    TimePeriod={
-        'Start': start,
-        'End': end
-    },
-    Granularity='MONTHLY',
-    Filter={
-        'Tags': {
-            'Key': tagKey,
-            'Values': [
-                tagValue
-            ]
-        }
-    },
-    Metrics=[
-        "UnblendedCost",
-        "UsageQuantity"
-    ],
-    GroupBy=[
-        {
-            'Type': 'DIMENSION',
-            'Key': 'SERVICE'
-        }
-    ]
-)
+    for entry in costs['ResultsByTime']:
+        day = {}
+        if not entry['Groups']:
+            day['Date'] = datetime.strptime(entry['TimePeriod']['Start'],'%Y-%m-%d').strftime('%d/%m/%Y')
+            day['Services'] = []
+            service = {}
+            service['Name'] = '-'
+            service['Cost'] = 0.00
+            service['Currency'] = 'USD'
+            day['Services'].append(service)
+            result.append(day)
+        else:
+            day['Date'] = datetime.strptime(entry['TimePeriod']['Start'],'%Y-%m-%d').strftime('%d/%m/%Y')
+            day['Services'] = []
+            for subentry in entry['Groups']:
+                service = {}
+                service['Name'] = subentry['Keys'][0]
+                service['Cost'] = subentry['Metrics']['UnblendedCost']['Amount']
+                service['Currency'] = subentry['Metrics']['UnblendedCost']['Unit']
+                day['Services'].append(service)
+            result.append(day)
 
-#print(costs)
-
-print('Costs associated to tag ' + tagKey + '=' + tagValue + ', by month:\n')
-for month in costs['ResultsByTime']:
-    mes = datetime.strptime(month['TimePeriod']['Start'],'%Y-%m-%d').strftime('%b %Y')
-    for srv in month['Groups']:
-        print('\t' + mes + ': ' + '\t' +
-              srv['Metrics']['UnblendedCost']['Unit'] + ' ' + 
-              str(round(float(srv['Metrics']['UnblendedCost']['Amount']), 2)) + '\t' +
-              srv['Keys'][0])
-    print()
+    return result
